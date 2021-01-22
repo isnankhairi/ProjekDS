@@ -1,0 +1,295 @@
+---
+title: "Project covid"
+author: "Isnan & Hilmy"
+date: "1/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tm)
+library(wordcloud2)
+library(twitteR)
+library(shiny) #package shiny web
+library(syuzhet) #package analisis sentimen
+library(wordcloud) #package worldcloud
+library(vroom)
+library(here)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(plyr)
+library(RTextTools)
+library(rtweet)
+```
+
+```{r}
+api_key<- "EqO3ATdaWsyDGPErydDMY5Z1h"
+api_secret<- "CV1UyM6QXQVo6pTjOzMwJ0YA96V1rxHisqQfQvgcMFhcvsDPyy"
+access_token<- "827086305053925376-jZyVS1OtufgJDeBxuad59BwNjkiN9Q9"
+access_token_secret<- "Y5XrBVcOiukeIbNGUM8UwTbtujtrjT14sdynvnYER737o"
+
+token <- create_token(
+app = "Analytics Data Science",
+  api_key,
+  api_secret,
+  access_token,
+  access_token_secret
+)
+```
+
+```{r}
+tw = search_tweets('covid', 
+                   n = 1000,
+                   retryOnRateLimit = 10e5, 
+                   lang = "id",
+                   token = token)
+saveRDS(tw,file = 'new_tweet.rds')
+```
+
+```{r}
+d <- readRDS('new_tweet.rds')
+komen <- d$text
+komenc <- Corpus(VectorSource(komen)) #
+
+##hapus http blablabla
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+twitclean <- tm_map(komenc, removeURL)
+##hapus ganti baris
+removeNL <- function(y) gsub("\n", "", y)
+twitclean <- tm_map(twitclean, removeNL)
+##hapus koma
+replacecomma <- function(y) gsub(",", "", y)
+twitclean <- tm_map(twitclean, replacecomma)
+##hapus rt
+removeRT <- function(y) gsub("RT ", "", y)
+twitclean <- tm_map(twitclean, removeRT)
+##hapus titik
+removetitik2 <- function(y) gsub(":", "", y)
+twitclean <- tm_map(twitclean, removetitik2)
+##hapus titik koma
+removetitikkoma <- function(y) gsub(";", " ", y)
+twitclean <- tm_map(twitclean, removetitikkoma)
+#hapus titik3
+removetitik3 <- function(y) gsub("p.", "", y)
+twitclean <- tm_map(twitclean, removetitik3)
+#hapus &amp
+removeamp <- function(y) gsub("&amp;", "", y)
+twitclean <- tm_map(twitclean, removeamp)
+#hapus Mention
+removeUN <- function(z) gsub("@\\w+", "", z)
+twitclean <- tm_map(twitclean, removeUN)
+#hapus space dll
+remove.all <- function(xy) gsub("[^[:alpha:][:space:]]*", "", xy)
+twitclean <-tm_map(twitclean,stripWhitespace)
+inspect(twitclean[1:10])
+twitclean <- tm_map(twitclean,remove.all)
+twitclean <- tm_map(twitclean, removePunctuation) #tanda baca
+twitclean <- tm_map(twitclean, tolower) #mengubah huruf kecil
+myStopwords <- readLines("stop.txt", warn = FALSE)
+twitclean <- tm_map(twitclean,removeWords,myStopwords)
+twitclean <- tm_map(twitclean , removeWords, 
+                    c('kalo','gak','org',''))
+
+#HAPUS DATA KOSONG
+try.error = function(x)
+{
+  # create missing value
+  y = NA
+  # tryCatch error
+  try_error = tryCatch(tolower(x), error=function(e) e)
+  # if not an error
+  if (!inherits(try_error, "error"))
+    y = tolower(x)
+  # result
+  return(y)
+}
+# lower case using try.error with sapply 
+twitclean = sapply(twitclean, try.error)
+# remove NAs in some_txt
+twitclean = twitclean[!is.na(twitclean)]
+names(twitclean) = NULL
+```
+
+```{r}
+dataframe<-data.frame(text=unlist(sapply(twitclean, `[`)), stringsAsFactors=F)
+View(dataframe)
+write.csv(dataframe,'tweet_covid.csv')
+```
+
+```{r}
+## Naive Bayes
+library(e1071)
+library(caret)
+library(syuzhet)
+
+
+covid_dataset <-read.csv("tweet_covid.csv",stringsAsFactors = FALSE)
+review <- as.character(covid_dataset$text)
+
+#anger, anticipation, disgust, fear, joy,sadness, surprise, trust negativ, positiv
+get_nrc_sentiment('happy')
+get_nrc_sentiment('excitement')
+s<-get_nrc_sentiment(review)
+review_combine<-cbind(covid_dataset$text,s)
+par(mar=rep(3,4))
+barplot(colSums(s),col=rainbow(10),ylab='count',main='sentiment analisis')
+```
+
+```{r}
+## Wordcloud
+
+library(tm) #library corpus u/ cleaning data
+library(RTextTools) #library  corpus  cleaning 
+library(e1071) #algoritma naivebayes
+library(dplyr) #naivebayes
+library(caret) #naivebayes
+library(shiny) #webshiny
+library(vroom)
+library(here)
+library(ggplot2)
+library(plotly)
+library(syuzhet)
+library(DT)
+
+df<-read.csv("tweet_covid.csv",stringsAsFactors = FALSE)
+glimpse(df)
+
+set.seed(20)
+df<-df[sample(nrow(df)),]
+df<-df[sample(nrow(df)),]
+glimpse(df)
+df$X=as.factor(df$X)
+corpus<-Corpus(VectorSource(df$text))
+corpus
+inspect(corpus[1:10])
+
+#fungsinya untuk membersihkan data data yang tidak dibutuhkan 
+corpus.clean<-corpus%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(removeWords,stopwords(kind="en"))%>%
+  tm_map(stripWhitespace)
+dtm<-DocumentTermMatrix(corpus.clean)
+inspect(dtm[1:10,1:20])
+df.train<-df[1:589,]
+df.test<-df[590:1177,]
+dtm.train<-dtm[1:589,]
+dtm.test<-dtm[590:1000,]
+corpus.clean.train<-corpus.clean[1:589]
+corpus.clean.test<-corpus.clean[590:1000]
+dim(dtm.train)
+fivefreq<-findFreqTerms(dtm.train,5)
+length(fivefreq)
+dtm.train.nb<-DocumentTermMatrix(corpus.clean.train,control = list(dictionary=fivefreq))
+
+#dim(dtm.train.nb)
+dtm.test.nb<-DocumentTermMatrix(corpus.clean.test,control = list(dictionary=fivefreq))
+dim(dtm.test.nb)
+
+convert_count <- function(x){
+  y<-ifelse(x>0,1,0)
+  y<-factor(y,levels=c(0,1),labels=c("no","yes"))
+  y
+}
+trainNB<-apply(dtm.train.nb,2,convert_count)
+testNB<-apply(dtm.test.nb,1,convert_count)
+classifier<-naiveBayes(trainNB,df.train$X,laplace = 1)
+library(wordcloud)
+wordcloud(corpus.clean,min.freq = 4,max.words=100,random.order=F,colors=brewer.pal(8,"Dark2"))
+```
+
+
+```{r}
+## Shiny
+
+twitter <- read.csv(file="tweet_covid.csv",header=TRUE)
+tweet <- twitter$text
+
+ui <- fluidPage(
+  titlePanel("Penggunaan Kata Covid Pada Twitter"),
+  mainPanel(
+    tabsetPanel(type = "tabs",
+                tabPanel("Scatterplot", plotOutput("scatterplot")),
+                tabPanel("Data Twitter", DT::dataTableOutput('tbl')),
+                tabPanel("Wordcloud", plotOutput("Wordcloud"))
+    )
+  )
+)
+
+
+# SERVER
+server <- function(input, output) {
+  
+  #data twit
+  output$tbl = DT::renderDataTable({
+    DT::datatable(twitter, options = list(lengthChange = FALSE))
+  })
+  
+  #scatter
+  output$scatterplot <- renderPlot({covid_dataset<-read.csv("tweet_covid.csv",stringsAsFactors = FALSE)
+  review <-as.character(covid_dataset$text)
+  get_nrc_sentiment('happy')
+  get_nrc_sentiment('excitement')
+  s<-get_nrc_sentiment(review)
+  review_combine<-cbind(covid_dataset$text,s)
+  par(mar=rep(3,4))
+  barplot(colSums(s),col=rainbow(10),ylab='count',main='sentiment analisis')
+  }, height=400)
+  
+  #wordcloud
+  output$Wordcloud <- renderPlot({
+   set.seed(20)
+df<-df[sample(nrow(df)),]
+df<-df[sample(nrow(df)),]
+glimpse(df)
+df$X=as.factor(df$X)
+corpus<-Corpus(VectorSource(df$text))
+corpus
+inspect(corpus[1:10])
+
+#fungsinya untuk membersihkan data data yang tidak dibutuhkan 
+corpus.clean<-corpus%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(removeWords,stopwords(kind="en"))%>%
+  tm_map(stripWhitespace)
+dtm<-DocumentTermMatrix(corpus.clean)
+inspect(dtm[1:10,1:20])
+df.train<-df[1:589,]
+df.test<-df[590:1177,]
+dtm.train<-dtm[1:589,]
+dtm.test<-dtm[590:1000,]
+corpus.clean.train<-corpus.clean[1:589]
+corpus.clean.test<-corpus.clean[590:1000]
+dim(dtm.train)
+fivefreq<-findFreqTerms(dtm.train,5)
+length(fivefreq)
+dtm.train.nb<-DocumentTermMatrix(corpus.clean.train,control = list(dictionary=fivefreq))
+
+#dim(dtm.train.nb)
+dtm.test.nb<-DocumentTermMatrix(corpus.clean.test,control = list(dictionary=fivefreq))
+dim(dtm.test.nb)
+
+convert_count <- function(x){
+  y<-ifelse(x>0,1,0)
+  y<-factor(y,levels=c(0,1),labels=c("no","yes"))
+  y
+}
+trainNB<-apply(dtm.train.nb,2,convert_count)
+testNB<-apply(dtm.test.nb,1,convert_count)
+classifier<-naiveBayes(trainNB,df.train$X,laplace = 1)
+library(wordcloud)
+wordcloud(corpus.clean,min.freq = 4,max.words=100,random.order=F,colors=brewer.pal(8,"Dark2"))
+})
+
+}
+
+shinyApp(ui = ui, server = server)
+```
+
